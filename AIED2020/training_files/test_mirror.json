@@ -1,0 +1,45 @@
+{
+  "set_params" : {
+      "agent" : {
+        "agent_type": "ModularAgent",
+        "stay_active": true,
+        "dont_save": true,
+        "function_set" : ["Add", "Subtract", "Multiply", "Divide"],
+        "feature_set" : ["Equals"],
+        "args": {
+          "when_learner": "decisiontree",
+          "where_learner": "MostSpecific",
+          "state_variablization" : "whereswap",
+          "when_args" : {
+            "cross_rhs_inference" : "none"
+           }
+        }
+      },
+      "HTML": "HTML/fraction_arithmetic.html"
+    },
+  "training_set1": {
+    "mirror_students" : {
+      "human_transactions" : "human_converted_v2.txt",
+      "human_afm_stats" : "human_model_values.txt",
+      "human_problems" : {"glob": "mass_production/mass_production_brds/*"},
+
+      "Pik_method" : "exact_align",
+      "pool_agent_transactions" : "AIED2020/dt_in_poolLog_conv.txt",
+      "pool_agent_problems": {"concatenate":[
+            {"glob" : "pool/brds/AS/*"},
+            {"glob" : "pool/brds/AD/*"},
+            {"glob" : "pool/brds/M/*"}
+            ]},
+      "pool_agent_error_table" : "AIED2020/dt_pool_error.txt",
+      "KCs" : ["AD check_convert","AD den3","AD num3","AD den4","AD num4","AD den5","AD num5","AD done",
+              "AS den5","AS num5","AS done",
+              "M den5","M num5","M done"],
+      "onlys_map" : {"hint": "hint", "done": "done", "num3": "JCommTable4.R0C0",
+                     "den3": "JCommTable4.R1C0", "num4": "JCommTable5.R0C0",
+                     "den4": "JCommTable5.R1C0", "num5": "JCommTable6.R0C0",
+                     "den5": "JCommTable6.R1C0"},
+      "kc_model" : "Field",
+      "problem_key" : "question_file",
+    }
+  }
+}

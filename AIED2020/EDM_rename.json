@@ -1,0 +1,14 @@
+{
+"selection" :
+	{"hint":"hint",
+	 "done":"done",
+	 "JCommTable4.R0C0":"num3",
+	 "JCommTable4.R1C0":"den3",
+	 "JCommTable5.R0C0":"num4",
+	 "JCommTable5.R1C0":"den4",
+	 "JCommTable6.R0C0":"num5",
+	 "JCommTable6.R1C0":"den5",
+	 "JCommTable8.R0C0":"check_convert",
+	 "checkBoxGroup": "check_convert"
+	}
+}

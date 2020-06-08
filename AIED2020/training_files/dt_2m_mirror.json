@@ -1,0 +1,49 @@
+{
+  "set_params" : {
+      "agent" : {
+        "agent_type": "ModularAgent",
+        "stay_active": true,
+        "dont_save": true,
+        "function_set" : ["Add", "Subtract","Numerator_Multiply", "Cross_Multiply", "Divide"],
+        "feature_set" : ["Equals"],
+        "args": {
+          "when_learner": "decisiontree",
+          "where_learner": "FastMostSpecific",
+          "state_variablization" : "whereappend",
+          "strip_attrs" : ["to_left","to_right","above","below","type","id","offsetParent"],
+          "when_args" : {
+            "cross_rhs_inference" : "none"
+           }
+        }
+      },
+      "HTML": "/../../tutors/FractionArithmetic/HTML/fraction_arithmetic.html",
+      "abs_qf_paths": true
+    },
+  "training_set1": {
+    "mirror_students" : {
+      "human_transactions" : "../human_convS.txt",
+      "human_afm_stats" : "../human_model_values.txt",
+      "human_problems" : {"glob": "../../tutors/FractionArithmetic/mass_production/mass_production_brds/*"},
+
+      "Pik_method" : "exact_align",
+      "pool_agent_transactions" : "../pool/dt_2m_poolLog_conv.txt",
+      "pool_agent_problems": {"concatenate":[
+            {"glob" : "../../tutors/FractionArithmetic/pool/brds/AS/*"},
+            {"glob" : "../../tutors/FractionArithmetic/pool/brds/AD/*"},
+            {"glob" : "../../tutors/FractionArithmetic/pool/brds/M/*"}
+            ]},
+      "pool_agent_error_table" : "../pool/dt_in_2m_pool_error.txt",
+      "KCs" : ["AD check_convert","AD den3","AD num3","AD den4","AD num4","AD den5","AD num5","AD done",
+              "AS den5","AS num5","AS done",
+              "M den5","M num5","M done"],
+      "onlys_map" : {"hint": "hint", "done": "done", "num3": "JCommTable4.R0C0",
+                     "den3": "JCommTable4.R1C0", "num4": "JCommTable5.R0C0",
+                     "den4": "JCommTable5.R1C0", "num5": "JCommTable6.R0C0",
+                     "den5": "JCommTable6.R1C0"},
+      
+      "kc_model" : "Field",
+      "problem_key" : "question_file",
+      "store_opp_table" : true,
+    }
+  }
+}

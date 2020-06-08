@@ -1,0 +1,706 @@
+---
+title: "Original KC with Disaggregated Error Types"
+output:
+  html_document:
+    code_folding: hide
+  pdf_document: default
+---
+
+```{r}
+library(lme4)
+library(dplyr)
+library(ggplot2)
+library(knitr)
+library(reshape2)
+library(reshape)
+```
+
+
+### Transaction to Rollup
+
++ Load transaction
+
+```{r}
+# load a transaction file annotated with the split errors
+read_transaction_file <- function(path){
+  df <- read.csv(path)
+  dataframe <- data.frame(df, na.string = "", stringsAsFactors = FALSE)
+  return(dataframe)
+}
+  
+```
+
+
++ Add KC model according to model definition
+
+```{r}
+#Use this function if using the new KC model
+
+#df: transaction file,
+#new_kc: dataframe which defines better model
+#old_kc_model_name: column name of old kc 
+
+add_kc_model <- function(df, new_kc, old_kc_model_name){
+  new_df <- left_join(df, new_kc, by = old_kc_model_name)
+  return(new_df)
+}
+```
+
+
+
++ Concatenate four binary columns to binary string
+```{r}
+
+
+concatenate <- function(df){
+  # rows where correct
+  correct_row <- which((df[, "S_current"] == 1) & (df[, "I_current"] == 1))
+  
+  # might redefine correct ?? now treat every correct as "1100"
+  df[correct_row, ]$S_downstream <- 0
+  df[correct_row, ]$I_downstream <- 0
+  
+  # make new column of binary stirng
+  df$binary_string <- paste(as.numeric(df$S_current), as.numeric(df$I_current), 
+                            as.numeric(df$S_downstream), as.numeric(df$I_downstream),sep = "")
+
+  return(df)
+}
+
+```
+
+
+
+
++ Add error type from binary string according to error definition
+```{r}
+
+add_error_types <- function(df, error_definition){
+  
+  df <- concatenate(df)
+  df <- left_join(df, error_definition, by = "binary_string")
+
+  return(df)
+}
+
+```
+
+
+
++ Add hint and correct error to error types
+```{r}
+#After adding the error types defined in error_definition, add in the hint error type and 
+# also correct ones
+  
+add_hint_correct <- function(df, error_definition){
+  colname <- c(colnames(error_definition)[2:3])
+
+#  df[, colname] <- as.character(df[, colname])
+  hint_row <- which(df[, "Outcome"] == "HINT")
+  df[hint_row, colname[1]] <- "hint"
+  df[hint_row, colname[2]] <- "hint"
+  
+  correct_row <- which(df[, "Outcome"] == "CORRECT")
+  df[correct_row, colname[1]] <- "correct"
+  df[correct_row, colname[2]] <- "correct"
+  return(df)
+}
+
+```
+
+
+
++ Make step slices
+```{r}
+# For every student, for each step,
+# Make step slices, each step slice distinguished by sumCorrect
+make_step_slices <- function(df){
+  
+ # drop_col <- c("Session.Id", "Time.Zone", "Duration..sec.", "Student.Response.Type",
+#                "Student.Response.Subtype", "Level..Assignment.", "Level..ProblemSet.",
+#                "Problem.View","Attempt.At.Step", "Is.Last.Attempt","Feedback.Text",
+#                "Feedback.Classification","Help.Level", "Condition.Name", "Condition.Type")
+  
+  df <- df %>%
+   # select (-drop_col) %>% 
+    group_by(Anon.Student.Id, Step.Name) %>% 
+    mutate(correct = ifelse(Outcome == "CORRECT", 1, 0),
+                     sumCorrect = cumsum(correct))
+  
+  df[df$correct == 0, ]$sumCorrect <- df[df$correct == 0, ]$sumCorrect + 1 
+  return(df)
+  
+}
+```
+
+
+
++ Rollup
+```{r}
+transaction_to_rollup <- function(df, model_definition, model, error_definition, error){
+  if(model == "orig"){
+    m <- colnames(model_definition)[1]
+  }else if(model == "new"){
+    m <- colnames(model_definition)[2]
+  }
+ 
+  if(error == "orig"){
+    e <- colnames(error_definition)[2]
+  }else if(error == "new"){
+    e <- colnames(error_definition)[3]
+  }
+  
+
+  df <- df %>% group_by(Anon.Student.Id, Step.Name, sumCorrect) %>% 
+               mutate(KC_name =  tail(!!as.name(m), n = 1),  # KC_name is the KC student is working toward,
+               first_error = (!!as.name(e))[1],         # first error in the step slice
+               hint_used = ifelse("HINT" %in% Outcome, "hint", ""), # Whether has used hint in that step slice
+               gen = ifelse( (Outcome[1] == "INCORRECT" | Outcome[1] == "HINT"), 1, 0) # general error
+               ) %>% 
+                
+       distinct(df, .keep_all=TRUE) # Keep only first row for each step slice, so #row = #step slice
+
+  return(df)
+}
+```
+
+
+
++ Add indicator columns indicating which first error according to error definition 
+
+```{r}
+
+add_first_error <- function(roll){
+  unique_type <- unique(roll$first_error)
+  unique_type <- unique_type[!is.na(unique_type)]
+  for (type in unique_type){
+    roll[, type] <- ifelse(roll$first_error == type, 1, 0)
+  }
+  return(roll)
+}
+
+```
+
+
+
++ Add opportunity count
+```{r}
+# Count opp for each student:
+# For each student, for each KC being worked toward, count number of step slice(rows)
+
+add_opportunity <- function(roll){
+  
+  roll <- roll %>% group_by(Anon.Student.Id, KC_name) %>% 
+  mutate(opp = seq.int(n())) #  %>% arrange(by_group = KC_name) 
+
+  roll <- roll[roll$KC_name != "", ]
+  roll$opp <- as.factor(roll$opp)
+  return(roll)
+}
+
+
+```
+
+
+
+
++ Aggregate errors
+```{r}
+
+# Aggregated across KC
+aggregate_all <- function(roll, exclude_KC = ""){
+  unique_type <- unique(roll$first_error)
+  unique_type <- unique_type[!is.na(unique_type)]
+  # Filter out some KC
+  
+  agg <- roll[!(roll$KC_name %in% exclude_KC), ]
+
+  
+  col <- c("opp", "gen")
+  for (type in unique_type){
+   col <- c(col, type)
+  }
+  agg <- agg[, (colnames(agg) %in% col)]
+  
+
+  # Make 3 aggregated tables
+  agg1 <- agg %>% group_by(opp) %>% summarise(n = n())
+  agg2 <- agg %>% group_by(opp) %>% summarise_all(.funs = mean, na.rm = T) 
+  agg3 <- agg %>% group_by(opp) %>% summarise_all(.fun = sum, na.rm = T)
+  return(list(agg1, agg2, agg3))
+  
+}
+
+
+
+# By individual KC
+aggregate_kc <- function(roll, exclude_KC = ""){
+  unique_type <- unique(roll$first_error)
+  unique_type <- unique_type[!is.na(unique_type)]
+  # Filter out some KC
+  
+  agg <- roll[!(roll$KC_name %in% exclude_KC), ]
+  
+  col <- c("opp", "KC_name", "gen")
+  for (type in unique_type){
+   col <- c(col, type)
+  }
+  agg <- agg[, (colnames(agg) %in% col)]
+
+  # Make 3 aggregated tables
+  agg1 <- agg %>% group_by(KC_name, opp) %>% summarise(n = n())
+  agg2 <- agg %>% group_by(KC_name, opp) %>% summarise_all(.funs = mean, na.rm = T) 
+  agg3 <- agg %>% group_by(KC_name, opp) %>% summarise_all(.fun = sum, na.rm = T)
+  return(list(agg1, agg2, agg3))
+  
+}
+
+```
+
+
+### Plotting
+
++ Overall plot
+```{r}
+
+plot_all <- function(res, exclude_error = "None", y_range, main){
+  
+  agg <- res[[2]]
+  agg$opp <- as.numeric(agg$opp)
+  agg <- data.frame(agg)
+  err_type <- (colnames(agg))[-1]
+  
+  if (exclude_error != "None"){
+    err_type <- err_type[!(err_type %in% exclude_error)]
+  }
+  #print(err_type)
+  agg <- melt(agg, id = "opp", measure = err_type) %>% filter(variable != "correct")
+  ggplot(agg, aes(opp, value, colour = variable)) + geom_line() + ylim(y_range) + xlim(0,25) + labs(title = main, x = "Opportunity", y = "Error Rate")
+}  
+  
+
+
+plot_kc <- function(res, exclude_error = "None", y_range, main){
+  
+  agg <- res[[2]]
+  agg$opp <- as.numeric(agg$opp)
+  agg <- data.frame(agg)
+  err_type <- (colnames(agg))[-c(1,2)]
+  print("plot kc, err_type:")
+  print(err_type)
+  #print(colnames(agg))
+  #print()
+  
+  
+  if (exclude_error != "None"){
+    err_type <- err_type[!(err_type %in% exclude_error)]
+  }
+  #print(err_type)
+  agg <- melt(agg, id = c("opp", "KC_name"), measure = err_type) %>% filter((variable != "correct") & (variable != "gen" ))
+  ggplot(agg, aes(opp, value, colour = variable)) + geom_line() + ylim(y_range) + xlim(0,25) + facet_wrap(~ KC_name) + labs(title = main, x = "Opportunity", y = "Error Rate")
+}   
+  
+
+```
+
+
++ Residual plot
+```{r}
+residual_plot <- function(tables1, tables2, exclude_error = "None", h_line = FALSE, y_range = c(-0.2, 0.2), main = ""){
+  t1 <- tables1[[2]]
+  t2 <- tables2[[2]]
+  # First col is opp,rest are errors
+  # Reorder cols
+  order <- colnames(t1)
+  t2 <- t2[ ,order]
+  
+  # Truncate
+  nrows <- min(nrow(t1), nrow(t2))
+  longer <- which.max(c(nrow(t1), nrow(t2)))
+  diff <- abs(nrow(t1) - nrow(t2))
+  
+  
+  print(paste("Truncating", as.character(diff), "rows from table", as.character(longer), "...", sep = " "))
+  t1 <- t1[c(1:nrows),]
+  t2 <- t2[c(1:nrows),]
+  
+  residual <- t1 - t2
+  
+  residual$opp <- 1:nrow(residual)
+  residual <- data.frame(residual)
+  err_type <- (colnames(residual))[-1]
+  
+  if (exclude_error != "None"){
+    err_type <- err_type[!(err_type %in% exclude_error)]
+  }
+  
+  residual <- melt(residual, id = "opp", measure = err_type) %>% filter(variable != "correct")
+  p <- ggplot(residual, aes(opp, value, colour = variable)) + geom_line() + ylim(y_range) + xlim(0,25) + labs(title = main, x = "Opportunity", y = "Value")
+  
+  if(h_line == TRUE){
+    p <- p + geom_hline(aes(yintercept = 0), linetype = "dashed") 
+  }
+  p
+  
+  
+}
+
+```
+
+
+
+### Wrapper functions
+
+```{r}
+
+
+rollup_from_transaction <- function(transaction, error_definition, model_definition, old_model_name, model_to_use = "orig", error_to_use = "orig"){
+  path <- transaction
+  
+  # clean transaction
+  trans <- read_transaction_file(path)
+  trans <- add_kc_model(trans, model_definition, old_model_name)
+  trans <- add_error_types(trans, error_definition)
+  trans <- add_hint_correct(trans, error_definition)
+  trans <- make_step_slices(trans)
+  
+  rollup <- transaction_to_rollup(trans, model_definition, model = model_to_use, error_definition, error = error_to_use)
+  rollup <- add_first_error(rollup)
+  rollup <- add_opportunity(rollup)
+  
+  return(rollup)
+}
+
+
+# use this to make residual, returns a list of 3 tables
+aggregate_from_rollup <- function(rollup, KC_to_remove = "", mode = "aggregated"){
+  if(mode == "aggregated"){
+    agg_res <- aggregate_all(rollup, exclude_KC = KC_to_remove)
+  }else if(mode == "KC"){
+    agg_res <- aggregate_kc(rollup, exclude_KC = KC_to_remove)
+  }
+  return(agg_res)
+}
+
+
+plot_from_aggregate <- function(table, mode = "aggregated", error_filter = "None", y_range = c(0, 0.5), main){
+  if(mode == "aggregated"){
+    plot <- plot_all(table, exclude_error = error_filter, y_range = y_range, main = main)
+  }else if(mode == "KC"){
+    plot <- plot_kc(table, exclude_error = error_filter, y_range = y_range, main = main)
+  }
+  return(plot)
+}
+
+
+```
+
+
+
+
+
+
+
+
+
+
+### Define better KC model
+```{r}
+
+orig_kc <- c("M den5", "M num5", "M done", "AS den5", "AS num5", 
+             "AS check_convert", "AS done", "", "AD num3","AD check_convert", 
+             "AD den3", "AD done", "AD den4", "AD num4", "AD num5", "AD den5", 
+             "M check_convert", "AD operation2", "M blankProblem")
+
+
+better_kc <-  c("M den_ans", "M num_ans", "done", "A den_ans", 
+                "A num_ans", "check_convert", "done", "", "AD num_conv", 
+                "check_convert", "AD den_conv", "done", "AD den_conv", 
+                "AD num_conv", "A num_ans", "A den_ans", "check_convert", 
+                "AD operation2", "M blankProblem")
+
+model_defined <- data.frame(matrix(NA, nrow = length(orig_kc), ncol = 2))
+names(model_defined) <- c("KC..Field.", "KC_combined")
+model_defined$KC..Field. <- orig_kc
+model_defined$KC_combined <- better_kc
+
+
+kable(model_defined[-8, ]) 
+#(model_defined
+```
+
+
+
+
+### Define error types from binary string
+```{r}
+#Binary strings that appear in the transaction file:
+#"1100", "1000", "0000", "0011", "1001", "0110", "0010", "0111", "NA"   
+#where "NA" means that transaction is either tutor performed, or is a hint request
+
+binary_str <- c("1100", "1000", "1001", "0000", "0010", "0110", "0011", "0111")
+type_defined <- data.frame(matrix(NA, nrow = length(binary_str), ncol = 3))
+orig_type <- c("correct", "incorrect", "misapplied", "out_of_graph", "wild", "where", "when", "where")
+
+simplified_type <- c("correct", "incorrect",  "incorrect",  "if-error", "incorrect", "if-error", "if-error", "if-error")
+
+names(type_defined) <- c("binary_string", "original_error_type", "simplified_error_type")
+type_defined$binary_string <- binary_str
+type_defined$original_error_type <- orig_type
+type_defined$simplified_error_type <- simplified_type
+
+
+kable(type_defined)
+```
+
+
+
+
+
+
+
+
+
+
+### Load human data
+
+```{r}
+
+human <- rollup_from_transaction(transaction = "/Users/daniellaye/Documents/transactions/trans_human.csv",
+                        error_definition = type_defined, 
+                        model_definition = model_defined, 
+                        old_model_name = "KC..Field.", 
+                        model_to_use = "orig", error_to_use = "orig")
+
+```
+
+```{r}
+agg_all_without_done_human <- aggregate_from_rollup(rollup = human, KC_to_remove = c("M done", "AS done", "AD done"), mode = "aggregated")
+agg_all_with_done_human <- aggregate_from_rollup(rollup = human, mode = "aggregated")
+
+agg_kc_without_done_human <- aggregate_from_rollup(rollup = human, KC_to_remove = c("M done", "AS done", "AD done"), mode = "KC")
+agg_kc_with_done_human <- aggregate_from_rollup(rollup = human, mode = "KC")
+```
+
+
+### Load AL data
+
+
+```{r}
+al <- rollup_from_transaction(transaction = "/Users/daniellaye/Documents/transactions/trans_iso.csv",
+                        error_definition = type_defined, 
+                        model_definition = model_defined, 
+                        old_model_name = "KC..Field.", 
+                        model_to_use = "orig", error_to_use = "orig")
+```
+
+
+```{r}
+agg_all_without_done_al <- aggregate_from_rollup(rollup = al, KC_to_remove = c("M done", "AS done", "AD done"), mode = "aggregated")
+agg_all_with_done_al <- aggregate_from_rollup(rollup = al, mode = "aggregated")
+
+agg_kc_without_done_al <- aggregate_from_rollup(rollup = al, KC_to_remove = c("M done", "AS done", "AD done"), mode = "KC")
+agg_kc_with_done_al <- aggregate_from_rollup(rollup = al, mode = "KC")
+```
+
+
+## Residuals (AL - Human)
+
+### Without done and without total error
+
+```{r}
+# Without done and without total error
+r1 = residual_plot(agg_all_without_done_al, agg_all_without_done_human, exclude_error = c("gen"), h_line = TRUE, y_range = c(-0.1, 0.1), main = "Residual Plot without Done and Without Total Error (AL - Human)")
+r1
+```
+
+### With done and without total error
+
+```{r}
+# With done and without total error
+r2 = residual_plot(agg_all_with_done_al, agg_all_with_done_human, exclude_error = c("gen"), h_line = TRUE, y_range = c(-0.1, 0.1), main = "Residual Plot with Done and Without Total Error (AL - Human)")
+r2
+```
+
+### Overall total error without done KC
+
+```{r}
+# Overall total error without done KC
+r3 = residual_plot(agg_all_without_done_al, agg_all_without_done_human, h_line = TRUE, y_range = c(-0.2, 0.2), main = "Residual Plot without Done and with Total Error (AL - Human)")
+r3
+```
+
+### Overall total error with done KC
+
+```{r}
+# Overall total error with done KC
+r4 = residual_plot(agg_all_with_done_al, agg_all_with_done_human, h_line = TRUE, y_range = c(-0.2, 0.2), main = "Residual Plot with Done and with Total Error (AL - Human)")
+r4
+```
+
+
+
+## Tables of overall error rates
+
+### AL With done 
+
+```{r}
+# AL With done 
+kable(agg_all_with_done_al[[2]])
+
+```
+
+
+### AL Without done
+
+```{r}
+# AL Without done
+kable(agg_all_without_done_al[[2]])
+```
+
+
+### Human With done 
+
+```{r}
+# Human With done 
+kable(agg_all_with_done_human[[2]])
+
+```
+
+
+### Human Without done
+
+```{r}
+# Human Without done
+kable(agg_all_without_done_human[[2]])
+```
+
+
+
+
+
+## Overall plots for AL
+
+### Overall without done KC and without total error
+
+```{r}
+# Overall without done KC and without total error
+al1 <- plot_from_aggregate(agg_all_without_done_al, mode = "aggregated", error_filter = "gen", y_range = c(0, 0.2), main = "Overall without Done and without Total Error for AL")
+al1
+
+```
+
+
+### Overall with done KC and without total error
+
+```{r}
+# Overall with done KC and without total error
+al2 <- plot_from_aggregate(agg_all_with_done_al, mode = "aggregated", error_filter = "gen", y_range = c(0, 0.2), main = "Overall with Done and without Total Error for AL")
+al2
+
+```
+
+### Overall total error without done KC
+
+```{r}
+# Overall total error without done KC
+al3 <- plot_from_aggregate(agg_all_without_done_al, mode = "aggregated", y_range = c(0, 0.6), main = "Overall without Done and with Total Error for AL")
+al3
+
+```
+
+
+### Overall total error with done KC
+
+```{r}
+# Overall total error with done KC
+al4 <- plot_from_aggregate(agg_all_with_done_al, mode = "aggregated", y_range = c(0, 0.6), main = "Overall with Done and with Total Error for AL")
+al4
+
+```
+
+
+### KC with done 
+
+```{r}
+# KC with done for AL
+al5 <- plot_from_aggregate(agg_kc_with_done_al, mode = "KC",  error_filter = "gen", y_range = c(0, 0.8), main = "Error Rate by KC with Done and without Total Error for AL")
+al5
+
+
+```
+
+### KC without done 
+
+```{r}
+# KC without done for AL
+al6 <- plot_from_aggregate(agg_kc_without_done_al, mode = "KC",  error_filter = "gen", y_range = c(0, 0.8), main = "Error Rate by KC without Done and without Total Error for AL")
+al6
+
+
+```
+
+
+
+
+
+## Human
+
+### Overall without done KC and without total error
+
+```{r}
+# Overall without done KC and without total error
+hu1 <- plot_from_aggregate(agg_all_without_done_human, mode = "aggregated", error_filter = "gen", y_range = c(0, 0.2), main = "Overall without Done and without Total Error for Human")
+hu1
+
+```
+
+### Overall with done KC and without total error
+
+```{r}
+# Overall with done KC and without total error
+hu2 <- plot_from_aggregate(agg_all_with_done_human, mode = "aggregated", error_filter = "gen", y_range = c(0, 0.2), main = "Overall with Done and without Total Error for Human")
+hu2
+
+```
+
+
+### Overall total error without done KC
+
+```{r}
+# Overall total error without done KC
+hu3 <- plot_from_aggregate(agg_all_without_done_human, mode = "aggregated", y_range = c(0, 0.6), main = "Overall without Done and with Total Error for Human")
+hu3
+
+```
+
+
+### Overall total error with done KC
+
+```{r}
+# Overall total error with done KC
+hu4 <- plot_from_aggregate(agg_all_with_done_human, mode = "aggregated", y_range = c(0, 0.6), main = "Overall with Done and with Total Error for Human")
+hu4
+
+```
+
+
+### KC with done 
+
+```{r}
+# KC with done for Human
+hu5 <- plot_from_aggregate(agg_kc_with_done_human, mode = "KC",  error_filter = "gen", y_range = c(0, 0.8), main = "Error Rate by KC with Done and without Total Error for Human")
+hu5
+
+```
+
+### KC without done 
+
+```{r}
+# KC without done for Human
+hu6 <- plot_from_aggregate(agg_kc_without_done_human, mode = "KC",  error_filter = "gen", y_range = c(0, 0.8), main = "Error Rate by KC without Done and without Total Error for Human")
+hu6
+
+
+```
+

@@ -1,0 +1,66 @@
+{
+  "set_params" : {
+      "agent" : {
+        "agent_type": "ModularAgent",
+        "stay_active": true,
+        "dont_save": true,
+        "function_set" : ["Add", "Subtract","Numerator_Multiply", "Cross_Multiply", "Divide"],
+        "feature_set" : ["Equals"],
+        "args": {
+          "when_learner": "decisiontree",
+          "where_learner": "FastMostSpecific",
+          "state_variablization" : "whereappend",
+          "strip_attrs" : ["to_left","to_right","above","below","type","id","offsetParent"],
+          "when_args" : {
+            "cross_rhs_inference" : "none"
+          }
+        }
+      }
+  },
+  "training_set1": [
+    {
+      "agent_name": "dt_pool",
+      "repetitions" : 100,
+      "problem_set": 
+      {"concatenate" : [
+        {"set_params": {
+            "HTML": "HTML/fraction_arithmetic.html",
+            "examples_only": false
+          }
+        },
+        {"shuffle" : {"concatenate" : [
+          {"sample": {
+            "n" : 30,
+            "set" : {
+              "glob" :
+                {"key" : "question_file",
+                 "pattern": "pool/brds/AS/*"
+                }
+              }
+            }
+          },
+          {"sample": {
+            "n" : 30,
+            "set" : {
+              "glob" :
+                {"key" : "question_file",
+                 "pattern": "pool/brds/AD/*"
+                }
+              }
+            }
+          },
+          {"sample": {
+            "n" : 30,
+            "set" : {
+              "glob" :
+                {"key" : "question_file",
+                 "pattern": "pool/brds/M/*"
+                }
+              }
+            }
+          }
+        ]}}
+      ]}
+    }
+  ]
+}
