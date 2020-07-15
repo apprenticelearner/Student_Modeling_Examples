@@ -4,18 +4,20 @@
         "agent_type": "ModularAgent",
         "stay_active": true,
         "dont_save": true,
-        "function_set" : ["Add", "Subtract","Numerator_Multiply", "Cross_Multiply", "Divide"],
+        "function_set" : ["RipFloatValue","Add", "Subtract","Numerator_Multiply", "Cross_Multiply", "Divide"],
         "feature_set" : ["Equals"],
         "args": {
+          "planner" : "numba",
           "when_learner": "decisiontree",
           "where_learner": "FastMostSpecific",
           "state_variablization" : "whereappend",
-          "strip_attrs" : ["to_left","to_right","above","below","type","id","offsetParent"],
+          "strip_attrs" : ["to_left","to_right","above","below","type","id","offsetParent",],
           "when_args" : {
             "cross_rhs_inference" : "none"
           }
         }
-      }
+      },
+      "abs_qf_paths": true,
   },
   "training_set1": [
     {
@@ -24,7 +26,7 @@
       "problem_set": 
       {"concatenate" : [
         {"set_params": {
-            "HTML": "HTML/fraction_arithmetic.html",
+            "HTML": "/../../tutors/FractionArithmetic/HTML/fraction_arithmetic.html",
             "examples_only": false
           }
         },
@@ -34,7 +36,7 @@
             "set" : {
               "glob" :
                 {"key" : "question_file",
-                 "pattern": "pool/brds/AS/*"
+                 "pattern": "../../tutors/FractionArithmetic/pool/brds/AS/*"
                 }
               }
             }
@@ -44,7 +46,7 @@
             "set" : {
               "glob" :
                 {"key" : "question_file",
-                 "pattern": "pool/brds/AD/*"
+                 "pattern": "../../tutors/FractionArithmetic/pool/brds/AD/*"
                 }
               }
             }
@@ -54,7 +56,7 @@
             "set" : {
               "glob" :
                 {"key" : "question_file",
-                 "pattern": "pool/brds/M/*"
+                 "pattern": "../../tutors/FractionArithmetic/pool/brds/M/*"
                 }
               }
             }

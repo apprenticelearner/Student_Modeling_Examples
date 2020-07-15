@@ -4,9 +4,10 @@
         "agent_type": "ModularAgent",
         "stay_active": true,
         "dont_save": true,
-        "function_set" : ["Add", "Subtract","Numerator_Multiply", "Cross_Multiply", "Divide"],
+        "function_set" : ["RipFloatValue","Add", "Subtract","Numerator_Multiply", "Cross_Multiply", "Divide"],
         "feature_set" : ["Equals"],
         "args": {
+          "planner" : "numba",
           "when_learner": "decisiontree",
           "where_learner": "FastMostSpecific",
           "state_variablization" : "whereappend",
