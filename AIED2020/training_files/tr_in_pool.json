@@ -4,13 +4,15 @@
         "agent_type": "ModularAgent",
         "stay_active": true,
         "dont_save": true,
-        "function_set" : ["Add", "Subtract", "Multiply", "Divide"],
+        "function_set" : ["RipFloatValue","Add", "Subtract","Numerator_Multiply", "Cross_Multiply", "Divide"],
         "feature_set" : ["Equals"],
         "args": {
+          "planner" : "numba",
+          "search_depth" : 2,
           "when_learner": "trestle",
           "where_learner": "FastMostSpecific",
           "state_variablization" : "whereswap",
-          "strip_attrs" : ["to_left","to_right","above","below","type","id","offsetParent",],
+          "strip_attrs" : ["to_left","to_right","above","below","type","id","offsetParent","dom_class"],
           "when_args" : {
             "cross_rhs_inference" : "implicit_negatives"
           }
